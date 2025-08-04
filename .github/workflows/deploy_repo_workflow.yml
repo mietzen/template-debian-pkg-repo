@@ -1,0 +1,101 @@
+name: Deploy Debian Repository
+
+on:
+  push:
+    paths:
+      - 'packages.yml'
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy-repo:
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev
+          pip install PyYAML requests
+
+      - name: Download and Process Packages
+        run: |
+          python .github/scripts/build-repo.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Repository Metadata
+        working-directory: ./pages
+        run: |
+          # Read active architectures from build script output
+          if [ -f "active_architectures.txt" ]; then
+            ACTIVE_ARCHS=$(cat active_architectures.txt)
+          else
+            ACTIVE_ARCHS=""
+          fi
+
+          # Generate Packages files for each active architecture
+          for arch in $ACTIVE_ARCHS; do
+            if [ -f "dists/stable/main/binary-${arch}/packages_list.txt" ]; then
+              mv "dists/stable/main/binary-${arch}/packages_list.txt" "dists/stable/main/binary-${arch}/Packages"
+              gzip -c "dists/stable/main/binary-${arch}/Packages" > "dists/stable/main/binary-${arch}/Packages.gz"
+            else
+              touch "dists/stable/main/binary-${arch}/Packages"
+              gzip -c "dists/stable/main/binary-${arch}/Packages" > "dists/stable/main/binary-${arch}/Packages.gz"
+            fi
+          done
+
+          # Generate Release file with dynamic architectures
+          cat > dists/stable/Release << EOF
+          Origin: ${GITHUB_REPOSITORY_OWNER}
+          Label: ${GITHUB_REPOSITORY_OWNER}
+          Suite: stable
+          Codename: stable
+          Version: 1.0
+          Architectures: ${ACTIVE_ARCHS}
+          Components: main
+          Description: ${GITHUB_REPOSITORY_OWNER} Debian Repository
+          Date: $(date -Ru)
+          EOF
+
+          # Add SHA256 checksums to Release file (modern standard)
+          cd dists/stable
+          echo "SHA256:" >> Release
+          find . -name "Packages*" -exec sha256sum {} \; | sed 's|^\./||' | awk '{printf " %s %16d %s\n", $1, length($1), $2}' >> Release
+
+      - name: Create Repository Configuration
+        working-directory: ./pages
+        run: |
+          cat > ${GITHUB_REPOSITORY#*/}.list << EOF
+          deb https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/ stable main
+          EOF
+
+      - name: Create Index Pages
+        working-directory: ./pages
+        run: |
+          python ../.github/scripts/create-index.py .
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./pages
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
+        id: deployment

@@ -1,0 +1,9 @@
+packages:
+  example-package-1:
+    url: https://github.com/user/repo1
+    version: "1.2.3"
+    asset_regex: '.*amd64.*'
+  example-package-2:
+    url: https://github.com/user/repo2
+    version: "2.0.1"
+    asset_regex: '.*all.*'
