@@ -1,6 +1,6 @@
 # Debian Repository on GitHub Pages
 
-This repository automatically creates and maintains a Debian package repository hosted on GitHub Pages by pulling `.deb` packages from GitHub releases.
+This template repository automatically creates and maintains a Debian package repository hosted on GitHub Pages by pulling `.deb` packages from GitHub releases.
 
 ## Setup
 
