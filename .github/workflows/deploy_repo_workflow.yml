@@ -36,27 +36,29 @@ jobs:
 
       - name: Download and Process Packages
         run: |
-          python .github/scripts/build-repo.py
+          python .github/scripts/build_repo_script.py
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate Repository Metadata
         working-directory: ./pages
         run: |
-          # Read active architectures from build script output
-          if [ -f "active_architectures.txt" ]; then
-            ACTIVE_ARCHS=$(cat active_architectures.txt)
+          set -euo pipefail
+
+          if [ -d "dists/stable/main" ]; then
+            ACTIVE_ARCHS=$(ls -1 dists/stable/main | sed -n 's/^binary-//p' | tr '\n' ' ' | xargs || true)
           else
             ACTIVE_ARCHS=""
           fi
 
-          # Generate Packages files for each active architecture
+          echo "Active architectures: ${ACTIVE_ARCHS}"
+
           for arch in $ACTIVE_ARCHS; do
-            if [ -f "dists/stable/main/binary-${arch}/packages_list.txt" ]; then
-              mv "dists/stable/main/binary-${arch}/packages_list.txt" "dists/stable/main/binary-${arch}/Packages"
-              gzip -c "dists/stable/main/binary-${arch}/Packages" > "dists/stable/main/binary-${arch}/Packages.gz"
-            else
+            mkdir -p "dists/stable/main/binary-${arch}"
+            if [ ! -f "dists/stable/main/binary-${arch}/Packages" ]; then
               touch "dists/stable/main/binary-${arch}/Packages"
+            fi
+            if [ ! -f "dists/stable/main/binary-${arch}/Packages.gz" ]; then
               gzip -c "dists/stable/main/binary-${arch}/Packages" > "dists/stable/main/binary-${arch}/Packages.gz"
             fi
           done
@@ -77,7 +79,12 @@ jobs:
           # Add SHA256 checksums to Release file (modern standard)
           cd dists/stable
           echo "SHA256:" >> Release
-          find . -name "Packages*" -exec sha256sum {} \; | sed 's|^\./||' | awk '{printf " %s %16d %s\n", $1, length($1), $2}' >> Release
+          while IFS= read -r -d '' f; do
+            sum=$(sha256sum "$f" | awk '{print $1}')
+            size=$(stat -c%s "$f")
+            rel=${f#./}
+            printf " %s %16d %s\n" "$sum" "$size" "$rel" >> Release
+          done < <(find . -type f \( -name "Packages" -o -name "Packages.gz" \) -print0)
 
       - name: Create Repository Configuration
         working-directory: ./pages
