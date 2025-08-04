@@ -90,7 +90,7 @@ jobs:
         working-directory: ./pages
         run: |
           cat > ${GITHUB_REPOSITORY#*/}.list << EOF
-          deb https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/ stable main
+          deb [trusted=yes] https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/ stable main
           EOF
 
       - name: Create Index Pages
